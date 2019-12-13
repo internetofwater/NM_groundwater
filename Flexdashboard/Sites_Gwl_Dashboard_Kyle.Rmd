@@ -1,0 +1,137 @@
+---
+title: "Untitled"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+editor_options: 
+  chunk_output_type: console
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(flexdashboard)
+library(maps)
+library(leaflet)
+library(sf)
+library(plotly)
+library(mapview)
+library(shiny)
+
+
+theme_set(theme_classic())
+getwd()
+#meta data
+sites.joined.skinny <- read.csv("../Processed/sites.joined.skinny.csv", as.is=TRUE)
+sites.joined.skinny <- sites.joined.skinny %>% dplyr::select(-X)
+
+#static df with count and date measurements
+sites.summary.static <- read.csv("../Processed/sites.summary.static.csv", as.is = TRUE)
+sites.summary.static$firstMeas <- as.Date(sites.summary.static$firstMeas)
+sites.summary.static$lastMeas <- as.Date(sites.summary.static$lastMeas)
+sites.summary.static <-  sites.summary.static %>% filter(Count > 10)
+
+#gwl data
+gwl.joined.skinny <- read.csv("../Processed/gwl.joined.skinny.csv",as.is=TRUE)
+gwl.joined.skinny$Date<-as.Date(gwl.joined.skinny$Date)
+
+countylist <- unique(sites.summary.static$CountyNm)
+```
+
+Sidebar {.sidebar}
+=======================================================================
+Identify desired attributes to narrow down sites on map
+
+```{r}
+#Agency selection
+checkboxGroupInput("AgencyCd", label = "Agency",
+            choices = c("USGS", "NMBGMR", "NGWMN", "OSE", "ABQ"), selected = "USGS")
+#Well Depth
+sliderInput("WellDepth", "Well Depth (ft)",
+            min = 3, max = 7218, value = c(3,5000), step = 1)
+# Number of measurements per well
+sliderInput("Count", "Number of measurements per well",
+            min = 1, max = 13000, value = c(1,10), step = 1)
+#Date of last measurement
+dateRangeInput("lastMeas", "Date of last measurement", start = NULL, end = NULL, 
+               min = "1900-05-01",max = "2019-11-08", format = "yyyy-mm-dd", 
+               startview = "month", weekstart = 0, language = "en", 
+               separator = " to ", width = NULL, autoclose = TRUE)
+#county drop down
+selectizeInput(
+        'County', 'County', choices = countylist,
+        multiple = TRUE, selected = NULL)
+```
+
+Dashboard
+=======================================================================
+
+
+Row {data-height=650}
+-----------------------------------------------------------------------
+
+### Chart A
+
+```{r}
+output$map <- renderLeaflet({
+  leaflet(data = sites.summary.static) %>% 
+ addTiles()%>%
+ addCircleMarkers(~DecLongVa, ~DecLatVa,
+                  stroke = FALSE, 
+                  fillOpacity = 0.3,
+                  popup = ~as.character(`SiteNo`),
+                  layerId = ~SiteNo)
+})
+leafletOutput('map')
+```
+
+Row {data-height=350}
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+site1ex <- gwl.joined.skinny %>%
+  filter(SiteNo == "314810106513601") 
+site1ex <- site1ex %>% 
+  dplyr::group_by(Date)
+site1ex.plot <- site1ex %>%
+  ggplot(aes(x=Date, y = DepthToWater)) +
+  geom_point() +
+  geom_line() +
+  scale_y_reverse() +
+  labs(y="Depth to Water (ft)")
+            
+print(site1ex.plot) 
+ggplotly(site1ex.plot)
+```
+
+### Click on a point to see groundwater levels
+
+```{r}
+
+click_marker <- eventReactive(input$map_marker_click, {
+  
+  x<-input$map_marker_click
+  y<-x$id
+  return(y)
+})
+
+ plot_data <- reactive({
+  
+  
+ # Fetch data for the clicked tract
+  
+ return(gwl.joined.skinny[gwl.joined.skinny$SiteNo == click_marker(), ])
+  
+  
+ })
+ output$well <- renderPlot({
+   ggplot(plot_data(), aes(x=Date, y = DepthToWater)) +
+     geom_point() + geom_line()
+   
+ })
+plotOutput('well')
+
+```

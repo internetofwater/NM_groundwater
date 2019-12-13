@@ -1,0 +1,198 @@
+---
+title: "New Mexico Groundwater"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    theme: united
+editor_options: 
+  chunk_output_type: console
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(rlang)
+library(tidyverse)
+library(flexdashboard)
+library(maps)
+library(leaflet)
+library(sf)
+library(plotly)
+library(mapview)
+library(shiny)
+library(viridis)
+library(shinyWidgets) 
+library(scales)
+library(DT)
+#devtools::install_github("dreamRs/shinyWidgets") 
+#install.packages("shinyWidgets")
+
+
+
+theme_set(theme_classic())
+getwd()
+
+#static df with count and date measurements
+sites.summary.static10 <- read.csv("../Processed/sites.summary.static10.csv", as.is = TRUE)
+sites.summary.static10$firstMeas <- as.Date(sites.summary.static10$firstMeas)
+sites.summary.static10$lastMeas <- as.Date(sites.summary.static10$lastMeas)
+sites.summary.static10$SiteType <- as.factor(sites.summary.static10$SiteType)
+sites.summary.static10$AgencyCd.x <- as.factor(sites.summary.static10$AgencyCd.x)
+
+table(sites.summary.static10$AgencyCd.x) #mostly USGS wells, but some are NMBGMR
+str(sites.summary.static10)
+summary(sites.summary.static10$WellDepth)
+
+countylist <- unique(sites.summary.static10$CountyNm)
+countylist <- sort(countylist)
+
+#gwl data
+gwl.joined.skinny <- read.csv("../Processed/gwl.joined.skinny.csv",as.is=TRUE)
+gwl.joined.skinny$Date<-as.Date(gwl.joined.skinny$Date)
+
+
+```
+
+Dashboard
+=======================================================================
+
+
+Sidebar {.sidebar}
+-------------------------------------------
+Identify desired attributes to narrow down sites on map
+
+```{r}
+#Agency selection
+checkboxGroupInput("Agency", label = "Agency",
+            choices = c("USGS", "NMBGMR"), 
+            selected = c("USGS", "NMBGMR"))
+
+#Number of measurements per well
+numericInput("Measurements", "Minimum number of measurements per well", value = 1)
+
+#Well Depth
+sliderInput("Depth", "Well Depth (ft)",
+            min = 0, max = 7400, value = c(0,3000), step = 10)
+
+
+#County drop down
+pickerInput(
+   inputId = "County",
+   label = "County", 
+    choices = countylist,
+   selected = countylist,
+   options = list(
+      `actions-box` = TRUE), 
+    multiple = TRUE
+)
+
+#Date of last measurement
+dateInput("Dates", "Has ground water level data as recent as:", 
+               min = "1900-05-01", max = Sys.Date(), format = "yyyy-mm-dd" , 
+               startview = "month", weekstart = 0, language = "en", 
+               value = "2000-05-01",width = NULL, autoclose = TRUE)
+
+
+```
+
+Row {data-height=650}
+-----------------------------------------------------------------------
+
+### Sites
+
+```{r}
+
+selectedData <- reactive({
+  m <- subset(sites.summary.static10,
+              AgencyCd.x %in% input$Agency &
+              WellDepth >= input$Depth[1] & WellDepth <= input$Depth[2] &
+              Count >= input$Measurements &
+              lastMeas >= as.Date(input$Dates) &
+              CountyNm %in% input$County
+       ) 
+ 
+  
+  
+})
+
+output$map <- renderLeaflet({
+
+  #palette 
+  pal <- colorNumeric(magma(999), NULL, reverse = TRUE, na.color = "green")
+  
+ selectedData() %>%
+ leaflet() %>% 
+ addTiles()%>%
+ addCircleMarkers(~DecLongVa, ~DecLatVa,
+                  stroke = FALSE, 
+                  fillOpacity = 0.5,
+                  fillColor = ~pal(WellDepth),
+                  radius = 5,
+                  popup = ~as.character(`SiteNo`),
+                  layerId = ~SiteNo) %>%
+ addLegend(position = 'bottomright', pal = pal, 
+                values = selectedData()$WellDepth, title = 'Well Depth (ft)')
+})
+leafletOutput('map')
+```
+
+Row {data-height=350}
+-----------------------------------------------------------------------
+### Click on a point to see groundwater levels
+
+```{r}
+
+click_marker <- eventReactive(input$map_marker_click, {
+  
+  x<-input$map_marker_click
+  y<-x$id
+  return(y)
+})
+
+ plot_data <- reactive({
+  
+  
+ # Fetch data for the clicked tract
+  
+ return(gwl.joined.skinny[gwl.joined.skinny$SiteNo == click_marker(), ])
+  
+  
+ })
+ output$well <- renderPlotly({
+   p <- ggplot(plot_data(), aes(x=Date, y = DepthToWater)) +
+     geom_point() + geom_line() + scale_y_reverse() +
+     labs(y="Depth to Water (ft)")
+   ggplotly(p)
+   
+ })
+plotlyOutput('well')
+
+```
+
+### Chart B
+
+```{r}
+colname <- colnames(sites.summary.static10)
+table_data <- reactive({
+  
+  
+ # Fetch data for the clicked tract
+  
+ return(sites.summary.static10[sites.summary.static10$SiteNo == click_marker(), ])
+ rownames(sites.summary.static10) <- colname
+  
+ })
+
+renderTable({t(table_data())
+             })
+```
+
+
+About
+==================================================
+To-do:
+
+- convert to .RDS dfs
+- join all
+- create "About" page
+- submit skinny joined df with "must haves"
