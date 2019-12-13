@@ -11,19 +11,19 @@ runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
-#pacman::p_load
-library(tidyverse)
-library(flexdashboard)
-library(maps)
-library(leaflet)
-library(sf)
-library(plotly)
-library(shiny)
-library(viridis)
-library(shinyWidgets)
-library(scales)
-library(data.table)
-library(DT)
+pacman::p_load(tidyverse, flexdashboard,maps,leaflet,sf,plotly,shiny,viridis,shinyWidgets,scales, data.table, DT, install=TRUE)
+#library(tidyverse)
+#library(flexdashboard)
+#library(maps)
+#library(leaflet)
+#library(sf)
+#library(plotly)
+#library(shiny)
+#library(viridis)
+#library(shinyWidgets)
+#library(scales)
+#library(data.table)
+#library(DT)
 
 
 #devtools::install_github("dreamRs/shinyWidgets") 
